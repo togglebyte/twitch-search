@@ -1,0 +1,12 @@
+[package]
+name = "twitch-search"
+version = "0.1.0"
+authors = ["Togglebit <me@togglebit.io>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ureq = { version = "1.5.1", features = ["json"] }
+serde_json = "1.0.58"
+chrono = "0.4.19"
