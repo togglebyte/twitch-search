@@ -4,7 +4,6 @@ use std::process::exit;
 use chrono::prelude::*;
 use serde_json::Value;
 
-// const ROOT_URL: &'static str = "https://api.twitch.tv/helix/search/channels?query=science%20%26%20technology&live_only=true&first=100";
 const ROOT_URL: &'static str = "https://api.twitch.tv/helix/streams?first=100;game_id=509670";
 
 macro_rules! to_str {
@@ -39,7 +38,13 @@ struct Entry {
     live_duration: String,
 }
 
-fn filter(entry: &Entry, term: &str) -> bool {
+fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
+    let display_name: &str = &entry.display_name.to_lowercase();
+    // 
+    if ignored_names.contains(&display_name) {
+        return false;
+    }
+
     if entry.title.to_lowercase().contains(term) {
         true
     } else {
@@ -95,7 +100,6 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         .set("Client-Id", &client_id)
         .call();
 
-    eprintln!("{:?}", resp);
     let mut json = match resp.into_json() {
         Ok(j) => j,
         Err(e) => {
@@ -139,7 +143,7 @@ fn main() {
         page = p;
         for entry in entries
             .into_iter()
-            .filter(|e| filter(e, &search_term))
+            .filter(|e| filter(e, &search_term, &["skarab42"]))
             .collect::<Vec<_>>()
         {
             print(entry);
