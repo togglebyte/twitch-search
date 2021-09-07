@@ -4,7 +4,7 @@ use std::process::exit;
 use chrono::prelude::*;
 use serde_json::Value;
 
-const ROOT_URL: &'static str = "https://api.twitch.tv/helix/streams?first=100;game_id=509670";
+const ROOT_URL: &'static str = "https://api.twitch.tv/helix/streams?first=100;game_id=1469308723";
 
 macro_rules! to_str {
     ($val: expr, $key: expr) => {
@@ -128,7 +128,7 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
 fn main() {
     let search_term = match std::env::args().skip(1).next() {
         Some(term) => term.to_lowercase(),
-        None => "rust".to_string(),
+        None => "".to_string(),
     };
 
     println!("Searching for \"{}\"", search_term);
@@ -143,7 +143,7 @@ fn main() {
         page = p;
         for entry in entries
             .into_iter()
-            .filter(|e| filter(e, &search_term, &["skarab42"]))
+            .filter(|e| filter(e, &search_term, &["kaetempest", "skarab42", "togglebit"]))
             .collect::<Vec<_>>()
         {
             print(entry);
