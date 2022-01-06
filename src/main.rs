@@ -4,7 +4,7 @@ use std::process::exit;
 use chrono::prelude::*;
 use serde_json::Value;
 
-const ROOT_URL: &'static str = "https://api.twitch.tv/helix/streams?first=100;game_id=1469308723";
+const ROOT_URL: &str = "https://api.twitch.tv/helix/streams?first=100;game_id=1469308723";
 
 macro_rules! to_str {
     ($val: expr, $key: expr) => {
@@ -45,11 +45,7 @@ fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
         return false;
     }
 
-    if entry.title.to_lowercase().contains(term) {
-        true
-    } else {
-        false
-    }
+    entry.title.to_lowercase().contains(term)
 }
 
 fn print(entry: Entry) {
@@ -57,7 +53,9 @@ fn print(entry: Entry) {
     print!("https://twitch.tv/{:<14} | ", entry.display_name);
     print!("{:>4} viewers | ", entry.viewer_count);
     print!("{} | ", entry.live_duration);
-    print!("{}\n", entry.title);
+    print!("{}", entry.title);
+
+    println!();
 }
 
 fn to_entry(value: &mut Value) -> Entry {
@@ -130,7 +128,7 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         .map(|v| v.to_string());
 
     let data = match json.get_mut("data") {
-        Some(Value::Array(a)) => a.into_iter().map(to_entry).collect::<Vec<_>>(),
+        Some(Value::Array(a)) => a.iter_mut().map(to_entry).collect::<Vec<_>>(),
         _ => {
             exit(0);
         }
@@ -140,7 +138,7 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
 }
 
 fn main() {
-    let search_term = match std::env::args().skip(1).next() {
+    let search_term = match std::env::args().nth(1) {
         Some(term) => term.to_lowercase(),
         None => "".to_string(),
     };
