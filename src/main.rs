@@ -2,9 +2,21 @@ use std::env;
 use std::process::exit;
 
 use chrono::prelude::*;
+use clap::Parser;
 use serde_json::Value;
 
 const ROOT_URL: &str = "https://api.twitch.tv/helix/streams?first=100;game_id=1469308723";
+
+#[derive(Parser, Debug)]
+#[clap(about, version, author)]
+struct Args {
+    /// Term to search for
+    term: String,
+
+    /// Streamers to exclude
+    #[clap(short = 'x', long)]
+    exclude: Option<Vec<String>>,
+}
 
 macro_rules! to_str {
     ($val: expr, $key: expr) => {
@@ -33,14 +45,14 @@ struct Entry {
     lang: String,
     display_name: String,
     title: String,
-    game_id: String,
+    _game_id: String,
     viewer_count: i64,
     live_duration: String,
 }
 
-fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
-    let display_name: &str = &entry.display_name.to_lowercase();
-    //
+fn filter(entry: &Entry, term: &str, ignored_names: &[String]) -> bool {
+    let display_name: String = entry.display_name.to_lowercase();
+
     if ignored_names.contains(&display_name) {
         return false;
     }
@@ -65,7 +77,7 @@ fn to_entry(value: &mut Value) -> Entry {
         lang: to_str!(value, "language"),
         display_name: to_str!(value, "user_name"),
         title: to_str!(value, "title"),
-        game_id: to_str!(value, "game_id"),
+        _game_id: to_str!(value, "game_id"),
         viewer_count: to_num!(value, "viewer_count"),
         live_duration: to_instant(&to_str!(value, "started_at")),
     }
@@ -138,10 +150,20 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
 }
 
 fn main() {
-    let search_term = match std::env::args().nth(1) {
-        Some(term) => term.to_lowercase(),
-        None => "".to_string(),
+    let args = Args::parse();
+    let search_term = args.term;
+
+    let mut exclude: Vec<String> = if let Some(exclusions) = args.exclude {
+        exclusions.iter().map(|x| x.to_lowercase()).collect()
+    } else {
+        Vec::new()
     };
+
+    if let Ok(ignore_list) = env::var("TWITCH_IGNORE") {
+        for i in ignore_list.split(',') {
+            exclude.push(i.to_string());
+        }
+    }
 
     println!("Searching for \"{}\"", search_term);
 
@@ -155,7 +177,7 @@ fn main() {
         page = p;
         for entry in entries
             .into_iter()
-            .filter(|e| filter(e, &search_term, &["kaetempest", "skarab42", "togglebit"]))
+            .filter(|e| filter(e, &search_term, &exclude))
             .collect::<Vec<_>>()
         {
             print(entry);

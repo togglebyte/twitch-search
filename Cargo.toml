@@ -10,3 +10,4 @@ edition = "2018"
 ureq = { version = "2.4.0", features = ["json"] }
 serde_json = "1.0.74"
 chrono = "0.4.19"
+clap = { version = "3.0.5", features = ["derive"] }
