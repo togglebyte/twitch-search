@@ -95,7 +95,21 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         }
     };
 
-    let resp = ureq::get(&url)
+    let agent = if let Ok(proxy_string) = env::var("https_proxy") {
+        let proxy = match ureq::Proxy::new(proxy_string) {
+            Ok(p) => p,
+            Err(_e) => {
+                eprintln!("Cannot generate proxy");
+                exit(1);
+            }
+        };
+        ureq::AgentBuilder::new().proxy(proxy).build()
+    } else {
+        ureq::AgentBuilder::new().build()
+    };
+
+    let resp = agent
+        .get(&url)
         .set("Authorization", &format!("Bearer {}", token))
         .set("Client-Id", &client_id)
         .call();
