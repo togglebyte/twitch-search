@@ -16,6 +16,10 @@ struct Args {
     /// Streamers to exclude
     #[clap(short = 'x', long)]
     exclude: Option<Vec<String>>,
+
+    /// Search on word boundary
+    #[clap(short, long)]
+    word: bool,
 }
 
 macro_rules! to_str {
@@ -50,10 +54,23 @@ struct Entry {
     live_duration: String,
 }
 
-fn filter(entry: &Entry, term: &str, ignored_names: &[String]) -> bool {
+fn filter(entry: &Entry, word: bool, term: &str, ignored_names: &[String]) -> bool {
     let display_name: String = entry.display_name.to_lowercase();
 
     if ignored_names.contains(&display_name) {
+        return false;
+    }
+
+    if word {
+        for e in entry
+            .title
+            .to_lowercase()
+            .split(|c: char| !c.is_alphabetic())
+        {
+            if e == term {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -152,6 +169,7 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
 fn main() {
     let args = Args::parse();
     let search_term = args.term;
+    let word_boundary = args.word;
 
     let mut exclude: Vec<String> = if let Some(exclusions) = args.exclude {
         exclusions.iter().map(|x| x.to_lowercase()).collect()
@@ -177,7 +195,7 @@ fn main() {
         page = p;
         for entry in entries
             .into_iter()
-            .filter(|e| filter(e, &search_term, &exclude))
+            .filter(|e| filter(e, word_boundary, &search_term, &exclude))
             .collect::<Vec<_>>()
         {
             print(entry);
