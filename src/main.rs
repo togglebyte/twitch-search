@@ -40,7 +40,7 @@ struct Entry {
 
 fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
     let display_name: &str = &entry.display_name.to_lowercase();
-    // 
+    //
     if ignored_names.contains(&display_name) {
         return false;
     }
@@ -100,7 +100,7 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         .set("Client-Id", &client_id)
         .call();
 
-    let mut json = match resp.into_json() {
+    let mut json: Value = match resp.unwrap().into_json() {
         Ok(j) => j,
         Err(e) => {
             eprintln!("failed to serialize json: {:?}", e);
