@@ -2,9 +2,25 @@ use std::env;
 use std::process::exit;
 
 use chrono::prelude::*;
+use clap::Parser;
 use serde_json::Value;
 
-const ROOT_URL: &'static str = "https://api.twitch.tv/helix/streams?first=100;game_id=1469308723";
+const ROOT_URL: &str = "https://api.twitch.tv/helix/streams?first=100;game_id=1469308723";
+
+#[derive(Parser, Debug)]
+#[clap(about, version, author)]
+struct Args {
+    /// Term to search for
+    term: String,
+
+    /// Streamers to exclude
+    #[clap(short = 'x', long)]
+    exclude: Option<Vec<String>>,
+
+    /// Search on word boundary
+    #[clap(short, long)]
+    word: bool,
+}
 
 macro_rules! to_str {
     ($val: expr, $key: expr) => {
@@ -33,23 +49,32 @@ struct Entry {
     lang: String,
     display_name: String,
     title: String,
-    game_id: String,
+    _game_id: String,
     viewer_count: i64,
     live_duration: String,
 }
 
-fn filter(entry: &Entry, term: &str, ignored_names: &[&str]) -> bool {
-    let display_name: &str = &entry.display_name.to_lowercase();
-    // 
+fn filter(entry: &Entry, word: bool, term: &str, ignored_names: &[String]) -> bool {
+    let display_name: String = entry.display_name.to_lowercase();
+
     if ignored_names.contains(&display_name) {
         return false;
     }
 
-    if entry.title.to_lowercase().contains(term) {
-        true
-    } else {
-        false
+    if word {
+        for e in entry
+            .title
+            .to_lowercase()
+            .split(|c: char| !c.is_alphabetic())
+        {
+            if e == term {
+                return true;
+            }
+        }
+        return false;
     }
+
+    entry.title.to_lowercase().contains(term)
 }
 
 fn print(entry: Entry) {
@@ -57,7 +82,9 @@ fn print(entry: Entry) {
     print!("https://twitch.tv/{:<14} | ", entry.display_name);
     print!("{:>4} viewers | ", entry.viewer_count);
     print!("{} | ", entry.live_duration);
-    print!("{}\n", entry.title);
+    print!("{}", entry.title);
+
+    println!();
 }
 
 fn to_entry(value: &mut Value) -> Entry {
@@ -67,7 +94,7 @@ fn to_entry(value: &mut Value) -> Entry {
         lang: to_str!(value, "language"),
         display_name: to_str!(value, "user_name"),
         title: to_str!(value, "title"),
-        game_id: to_str!(value, "game_id"),
+        _game_id: to_str!(value, "game_id"),
         viewer_count: to_num!(value, "viewer_count"),
         live_duration: to_instant(&to_str!(value, "started_at")),
     }
@@ -95,12 +122,26 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         }
     };
 
-    let resp = ureq::get(&url)
+    let agent = if let Ok(proxy_string) = env::var("https_proxy") {
+        let proxy = match ureq::Proxy::new(proxy_string) {
+            Ok(p) => p,
+            Err(_e) => {
+                eprintln!("Cannot generate proxy");
+                exit(1);
+            }
+        };
+        ureq::AgentBuilder::new().proxy(proxy).build()
+    } else {
+        ureq::AgentBuilder::new().build()
+    };
+
+    let resp = agent
+        .get(&url)
         .set("Authorization", &format!("Bearer {}", token))
         .set("Client-Id", &client_id)
         .call();
 
-    let mut json = match resp.into_json() {
+    let mut json: Value = match resp.unwrap().into_json() {
         Ok(j) => j,
         Err(e) => {
             eprintln!("failed to serialize json: {:?}", e);
@@ -116,7 +157,7 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         .map(|v| v.to_string());
 
     let data = match json.get_mut("data") {
-        Some(Value::Array(a)) => a.into_iter().map(to_entry).collect::<Vec<_>>(),
+        Some(Value::Array(a)) => a.iter_mut().map(to_entry).collect::<Vec<_>>(),
         _ => {
             exit(0);
         }
@@ -126,10 +167,21 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
 }
 
 fn main() {
-    let search_term = match std::env::args().skip(1).next() {
-        Some(term) => term.to_lowercase(),
-        None => "".to_string(),
+    let args = Args::parse();
+    let search_term = args.term;
+    let word_boundary = args.word;
+
+    let mut exclude: Vec<String> = if let Some(exclusions) = args.exclude {
+        exclusions.iter().map(|x| x.to_lowercase()).collect()
+    } else {
+        Vec::new()
     };
+
+    if let Ok(ignore_list) = env::var("TWITCH_IGNORE") {
+        for i in ignore_list.split(',') {
+            exclude.push(i.to_string());
+        }
+    }
 
     println!("Searching for \"{}\"", search_term);
 
@@ -143,7 +195,7 @@ fn main() {
         page = p;
         for entry in entries
             .into_iter()
-            .filter(|e| filter(e, &search_term, &["kaetempest", "skarab42", "togglebit"]))
+            .filter(|e| filter(e, word_boundary, &search_term, &exclude))
             .collect::<Vec<_>>()
         {
             print(entry);
