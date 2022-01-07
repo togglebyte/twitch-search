@@ -49,15 +49,12 @@ struct Entry {
     lang: String,
     display_name: String,
     title: String,
-    _game_id: String,
     viewer_count: i64,
     live_duration: String,
 }
 
 fn filter(entry: &Entry, word: bool, term: &str, ignored_names: &[String]) -> bool {
-    let display_name: String = entry.display_name.to_lowercase();
-
-    if ignored_names.contains(&display_name) {
+    if ignored_names.contains(&entry.display_name.to_lowercase()) {
         return false;
     }
 
@@ -65,8 +62,7 @@ fn filter(entry: &Entry, word: bool, term: &str, ignored_names: &[String]) -> bo
         for e in entry
             .title
             .to_lowercase()
-            .split(|c: char| !c.is_alphabetic())
-        {
+            .split(|c: char| !c.is_alphabetic()) {
             if e == term {
                 return true;
             }
@@ -82,9 +78,7 @@ fn print(entry: Entry) {
     print!("https://twitch.tv/{:<14} | ", entry.display_name);
     print!("{:>4} viewers | ", entry.viewer_count);
     print!("{} | ", entry.live_duration);
-    print!("{}", entry.title);
-
-    println!();
+    print!("{}\n", entry.title);
 }
 
 fn to_entry(value: &mut Value) -> Entry {
@@ -94,7 +88,6 @@ fn to_entry(value: &mut Value) -> Entry {
         lang: to_str!(value, "language"),
         display_name: to_str!(value, "user_name"),
         title: to_str!(value, "title"),
-        _game_id: to_str!(value, "game_id"),
         viewer_count: to_num!(value, "viewer_count"),
         live_duration: to_instant(&to_str!(value, "started_at")),
     }
@@ -122,19 +115,21 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
         }
     };
 
-    let agent = if let Ok(proxy_string) = env::var("https_proxy") {
-        let proxy = match ureq::Proxy::new(proxy_string) {
-            Ok(p) => p,
-            Err(_e) => {
-                eprintln!("Cannot generate proxy");
-                exit(1);
-            }
-        };
-        ureq::AgentBuilder::new().proxy(proxy).build()
-    } else {
-        ureq::AgentBuilder::new().build()
-    };
+    // -----------------------------------------------------------------------------
+    //     - Proxy -
+    // -----------------------------------------------------------------------------
+    let proxy = env::var("https_proxy").ok()
+        .and_then(|p| ureq::Proxy::new(p).ok());
 
+    let mut agent = ureq::AgentBuilder::new();
+    if let Some(proxy) = proxy {
+        agent = agent.proxy(proxy);
+    }
+    let agent = agent.build();
+
+    // -----------------------------------------------------------------------------
+    //     - Request -
+    // -----------------------------------------------------------------------------
     let resp = agent
         .get(&url)
         .set("Authorization", &format!("Bearer {}", token))
@@ -158,30 +153,37 @@ fn fetch(after: Option<String>) -> (Vec<Entry>, Option<String>) {
 
     let data = match json.get_mut("data") {
         Some(Value::Array(a)) => a.iter_mut().map(to_entry).collect::<Vec<_>>(),
-        _ => {
-            exit(0);
-        }
+        _ => exit(0),
     };
 
     (data, pagination)
 }
 
+// -----------------------------------------------------------------------------
+//     - Excluded terms -
+// -----------------------------------------------------------------------------
+fn exclusions(exclude: Option<Vec<String>>) -> Vec<String> {
+    let mut excluded = match exclude {
+        Some(exclusions) => exclusions.iter().map(|x| x.to_lowercase()).collect(),
+        None => vec![],
+    };
+
+    if let Ok(ignore_list) = env::var("TWITCH_IGNORE") {
+        excluded.extend(ignore_list.split(',').map(str::to_lowercase));
+    }
+
+    excluded
+}
+
+// -----------------------------------------------------------------------------
+//     - Main -
+// -----------------------------------------------------------------------------
 fn main() {
     let args = Args::parse();
     let search_term = args.term;
     let word_boundary = args.word;
 
-    let mut exclude: Vec<String> = if let Some(exclusions) = args.exclude {
-        exclusions.iter().map(|x| x.to_lowercase()).collect()
-    } else {
-        Vec::new()
-    };
-
-    if let Ok(ignore_list) = env::var("TWITCH_IGNORE") {
-        for i in ignore_list.split(',') {
-            exclude.push(i.to_string());
-        }
-    }
+    let exclude = exclusions(args.exclude);
 
     println!("Searching for \"{}\"", search_term);
 
@@ -193,18 +195,16 @@ fn main() {
         let (entries, p) = fetch(page);
         total += entries.len();
         page = p;
-        for entry in entries
+        found += entries
             .into_iter()
             .filter(|e| filter(e, word_boundary, &search_term, &exclude))
-            .collect::<Vec<_>>()
-        {
-            print(entry);
-            found += 1;
-        }
+            .map(|e| print(e))
+            .count();
 
         if page.is_none() {
             break;
         }
     }
+
     println!("Done ({}/{})", found, total);
 }
